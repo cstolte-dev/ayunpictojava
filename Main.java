@@ -674,7 +674,7 @@ public class Main {
 									}
 								if (web == null || (request.headers().contains(HttpHeaderNames.CONNECTION) && request.headers().get(HttpHeaderNames.CONNECTION).toLowerCase().contains("upgrade") && request.headers().contains(HttpHeaderNames.UPGRADE) && request.headers().get(HttpHeaderNames.UPGRADE).toLowerCase().contains("websocket"))) {
 									pipeline.addLast("websocket-server-compression-handler", new WebSocketServerCompressionHandler());
-									pipeline.addLast("websocket-server-protocol-handler", new WebSocketServerProtocolHandler("/", null, true, 65536));
+									pipeline.addLast("websocket-server-protocol-handler", new WebSocketServerProtocolHandler("/", null, true, 2097152));
 									pipeline.addLast("websocket-frametojson", new WebSocketFrameToJsonObjectDecoder());
 									pipeline.addLast("websocket-jsontoframe", new JsonObjectToWebSocketFrameEncoder());
 									pipeline.addLast("server-handler", new ServerHandler());
@@ -687,7 +687,7 @@ public class Main {
 										}
 										InetAddress ipp = ((InetSocketAddress) connection.remoteAddress()).getAddress();
 										if (ipp.getHostAddress().equalsIgnoreCase(ip)) i++;
-										if (i >= 50) {
+										if (i >= 5) {
 											ctx.close();
 											return;
 										}
@@ -840,7 +840,8 @@ public class Main {
 
 		@Override
 		protected void decode(ChannelHandlerContext ctx, TextWebSocketFrame frame, List<Object> out) {
-			if (frame.content().readableBytes() > 524288) {
+			if (frame.content().readableBytes() > 2097152) {
+				System.out.println("Message rejected: too large (" + frame.content().readableBytes() + " bytes)");
 				ctx.close();
 				return;
 			}
@@ -849,7 +850,7 @@ public class Main {
 					ctx.close();
 				} else {
 					int pr = ctx.channel().hasAttr(PINGS_ROW) ? ctx.channel().attr(PINGS_ROW).get() : 0;
-					if (pr >= 300) {
+					if (pr >= 1200) { // ~10 hours idle (1200 pings x 30s)
 						// idle
 						ctx.close();
 						return;
@@ -924,6 +925,7 @@ public class Main {
 	}
 
 	static class ServerHandler extends SimpleChannelInboundHandler<JsonObject> {
+		private static final java.util.concurrent.ExecutorService DISCORD_RENDER_POOL = java.util.concurrent.Executors.newSingleThreadExecutor();
 		@Override
 		public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
 			ctx.close();
@@ -1220,15 +1222,15 @@ public class Main {
 					} else {
 						if (!ctx.channel().hasAttr(COOLDOWN))
 							ctx.channel().attr(COOLDOWN).set(System.currentTimeMillis() - 64000L);
-						if (!ctx.channel().hasAttr(RATELIMIT)) ctx.channel().attr(RATELIMIT).set(300);
+						if (!ctx.channel().hasAttr(RATELIMIT)) ctx.channel().attr(RATELIMIT).set(1000);
 						if (ctx.channel().attr(COOLDOWN).get() > System.currentTimeMillis()) {
 							ctx.writeAndFlush(generateServerMessage(16463656, "Ratelimited: Please wait " + (1 + (int) (ctx.channel().attr(COOLDOWN).get() - System.currentTimeMillis()) / 1000) + "s"));
 							return;
 						} else {
-							if (System.currentTimeMillis() - ctx.channel().attr(COOLDOWN).get() < 300) {
-								ctx.channel().attr(RATELIMIT).set(Math.min(4000, ctx.channel().attr(RATELIMIT).get() * 2));
+							if (System.currentTimeMillis() - ctx.channel().attr(COOLDOWN).get() < 1000) {
+								ctx.channel().attr(RATELIMIT).set(Math.min(32000, ctx.channel().attr(RATELIMIT).get() * 2));
 							} else {
-								ctx.channel().attr(RATELIMIT).set(300);
+								ctx.channel().attr(RATELIMIT).set(1000);
 							}
 							ctx.channel().attr(COOLDOWN).set(System.currentTimeMillis() + ctx.channel().attr(RATELIMIT).get());
 						}
@@ -1411,7 +1413,7 @@ public class Main {
 						filter = Arrays.asList(chatFilterRooms).contains(roomId);
 					}
 					String evilText = textRaw;
-					BufferedImage drawingImage = drawImage(ctx, jsonObject, player, textboxesOut);
+					BufferedImage drawingImage = tess != null ? drawImage(ctx, jsonObject, player, textboxesOut) : null;
 					if (drawingImage != null && tess != null) {
 						try {
 							evilText = tess.doOCR(drawingImage);
@@ -1483,19 +1485,24 @@ public class Main {
 						if (textChannel != null) {
 							if (!textRaw.isEmpty())
 								textChannel.sendMessage(filterMsg(player.get("name").getAsString() + " » " + textRaw)).queue();
-							if (!filter) {
-								drawingImage = drawImage(ctx, jsonObject, player, textboxesOut);
-							}
-							if (drawingImage == null) {
-								return;
-							} else {
-								ByteArrayOutputStream baos = new ByteArrayOutputStream();
+							// Render the drawing for Discord on a background thread so a complex
+							// drawing can't stall the chat server or get the sender disconnected.
+							final boolean renderNow = !filter || drawingImage == null;
+							final BufferedImage preRendered = drawingImage;
+							final JsonObject msgF = jsonObject;
+							final JsonObject playerF = player;
+							final JsonArray textboxesF = textboxesOut;
+							DISCORD_RENDER_POOL.submit(() -> {
 								try {
-									ImageIO.write(drawingImage, "PNG", baos);
+									BufferedImage img = renderNow ? drawImage(null, msgF, playerF, textboxesF) : preRendered;
+									if (img == null) return;
+									ByteArrayOutputStream baos = new ByteArrayOutputStream();
+									ImageIO.write(img, "PNG", baos);
 									textChannel.sendFiles(FileUpload.fromData(baos.toByteArray(), "drawing.png")).queue();
-								} catch (IOException ignored) {
+								} catch (Throwable t) {
+									System.out.println("Discord drawing upload failed: " + t);
 								}
-							}
+							});
 						}
 					}
 					break;
@@ -1640,9 +1647,10 @@ public class Main {
 		private BufferedImage drawImage(ChannelHandlerContext ctx, JsonObject jsonObject, JsonObject player, JsonArray textboxesOut) {
 			if (jsonObject.getAsJsonObject("message").has("drawing")) {
 				long startTime = System.currentTimeMillis();
+				long limitMs = ctx == null ? 30000 : 5000;
 				JsonArray drawing = jsonObject.getAsJsonObject("message").getAsJsonArray("drawing");
-				if (System.currentTimeMillis() - startTime > 5000) {
-					ctx.close();
+				if (System.currentTimeMillis() - startTime > limitMs) {
+					if (ctx != null) ctx.close(); else System.out.println("Discord drawing skipped: took too long to render");
 					return null;
 				}
 				int lines = jsonObject.getAsJsonObject("message").get("lines").getAsInt();
@@ -1780,8 +1788,8 @@ public class Main {
 							rainbow = true;
 							break;
 					}
-					if (System.currentTimeMillis() - startTime > 5000) {
-						ctx.close();
+					if (System.currentTimeMillis() - startTime > limitMs) {
+						if (ctx != null) ctx.close(); else System.out.println("Discord drawing skipped: took too long to render");
 						g2d.dispose();
 						return null;
 					}
@@ -1789,8 +1797,8 @@ public class Main {
 				g2d.draw(polyline);
 				g2d.setStroke(stroke1);
 				g2d.setColor(fgColor);
-				if (System.currentTimeMillis() - startTime > 5000) {
-					ctx.close();
+				if (System.currentTimeMillis() - startTime > limitMs) {
+					if (ctx != null) ctx.close(); else System.out.println("Discord drawing skipped: took too long to render");
 					g2d.dispose();
 					return null;
 				}
@@ -1804,8 +1812,8 @@ public class Main {
 					double x = textboxObj.get("x").getAsDouble() - 22;
 					double y = textboxObj.get("y").getAsDouble() - 208;
 					g2d.drawString(text, (float) x * scale, (float) (y + 12) * scale);
-					if (System.currentTimeMillis() - startTime > 5000) {
-						ctx.close();
+					if (System.currentTimeMillis() - startTime > limitMs) {
+						if (ctx != null) ctx.close(); else System.out.println("Discord drawing skipped: took too long to render");
 						g2d.dispose();
 						return null;
 					}
@@ -1827,7 +1835,7 @@ public class Main {
 			InetAddress ip = ((InetSocketAddress) ctx.channel().remoteAddress()).getAddress();
 			super.channelActive(ctx);
 			CONS_PER_IP.putIfAbsent(ip, new AtomicInteger(0));
-			if (CONS_PER_IP.get(ip).getAndIncrement() > 50) {
+			if (CONS_PER_IP.get(ip).getAndIncrement() > 5) {
 				ctx.close();
 			}
 		}

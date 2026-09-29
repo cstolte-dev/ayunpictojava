@@ -626,7 +626,8 @@ loaderFunc = (loader, resources) => {
             if (drawHistory[i].y > lowestY)
                 lowestY = drawHistory[i].y;
         }
-        message.drawing = drawHistory;
+        // Round coordinates to 1 decimal place so detailed drawings stay small enough to send
+        message.drawing = drawHistory.map(p => ({x: Math.round(p.x * 10) / 10, y: Math.round(p.y * 10) / 10, type: p.type}));
         for (let i = 0; i < pc_sprites.textboxes.length; i++) {
             if (pc_sprites.textboxes[i].text !== "") {
                 let tbObj = {
