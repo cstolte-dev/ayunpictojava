@@ -4,16 +4,16 @@
 	"tripcode_secret": "CHANGE_ME_TO_SOMETHING_RANDOM",
 	"web": "www",
 	"secret": "",
-	"discord": {
+	"discord": {1554512259122733056}
 		"enabled": true,
-		"token": "PASTE_YOUR_BOT_TOKEN_HERE",
+		"token": "MTU1NDUxMzQyMDU4NDM2MTk5NA.Grk_IW.Zm-P-qiWmpAnolyQoMOb7e6sk56x3LAuP13oTY",
 		"channels": [
-			"ROOM_A_CHANNEL_ID",
-			"ROOM_B_CHANNEL_ID",
-			"ROOM_C_CHANNEL_ID",
-			"ROOM_D_CHANNEL_ID"
+			"1554520470223851651",
+			"1554520506097606656",
+			"1554520535088631848",
+			"1554520560229285888"
 		],
-		"status_channel": "STATUS_CHANNEL_ID",
+		"status_channel": "",
 		"image_quality": 4.0
 	},
 	"chat_filter": {
