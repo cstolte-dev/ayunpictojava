@@ -904,6 +904,33 @@ public class Main {
 		return in.replaceAll("([_*~`|\\\\<>:!])", "\\\\$1").replaceAll("@(everyone|here|[!&]?[0-9]{17,21})", "@\u200b\\\\$1");
 	}
 
+	// Recent messages per public room, replayed to people when they join/rejoin
+	private static final int HISTORY_SIZE = 30;
+	private static final Map<String, ArrayDeque<JsonObject>> HISTORY = new ConcurrentHashMap<>();
+
+	private static void addToHistory(String roomId, JsonObject msg) {
+		ArrayDeque<JsonObject> h = HISTORY.computeIfAbsent(roomId, k -> new ArrayDeque<>());
+		synchronized (h) {
+			h.addLast(msg.deepCopy());
+			while (h.size() > HISTORY_SIZE) h.removeFirst();
+		}
+	}
+
+	private static void sendHistory(String roomId, ChannelHandlerContext ctx) {
+		ArrayDeque<JsonObject> h = HISTORY.get(roomId);
+		if (h == null) return;
+		List<JsonObject> copy;
+		synchronized (h) {
+			copy = new ArrayList<>(h);
+		}
+		for (JsonObject msg : copy) {
+			JsonObject m = msg.deepCopy();
+			m.addProperty("history", true);
+			ctx.write(m);
+		}
+		ctx.flush();
+	}
+
 	private static final Map<JsonObject, ChannelHandlerContext> USERS_A = new ConcurrentHashMap<>();
 
 	private static final Map<JsonObject, ChannelHandlerContext> USERS_B = new ConcurrentHashMap<>();
@@ -1191,15 +1218,31 @@ public class Main {
 					if (USERS == null) return;
 					if (USERS.size() >= 16) return;
 					player = ctx.channel().attr(PLAYER_DATA).get();
-					if (USERS.containsKey(player)) return;
-					finalPlayer = player;
-					if (USERS.keySet().stream().anyMatch(jsonObject1 -> jsonObject1.get("name").getAsString().equals(finalPlayer.get("name").getAsString()))) return;
+					// Reconnect support: if someone with this name is already in the room on an
+					// older connection (e.g. a phone that went to the background), replace it.
+					boolean replaced = false;
+					for (Map.Entry<JsonObject, ChannelHandlerContext> entry : new ArrayList<>(USERS.entrySet())) {
+						if (!entry.getKey().get("name").getAsString().equals(player.get("name").getAsString())) continue;
+						ChannelHandlerContext oldCtx = entry.getValue();
+						if (oldCtx.channel() == ctx.channel()) return;
+						// Same name but different color = a different person; keep the old behavior (reject)
+						if (!entry.getKey().equals(player)) return;
+						USERS.remove(entry.getKey(), oldCtx);
+						oldCtx.channel().attr(ROOM_ID).set(null);
+						JsonObject kick = new JsonObject();
+						kick.addProperty("type", "sv_replaced");
+						oldCtx.writeAndFlush(kick).addListener(ChannelFutureListener.CLOSE);
+						replaced = true;
+					}
+					if (USERS.size() >= 16) return;
 					ctx.channel().attr(ROOM_ID).set(roomId);
 					USERS.put(player, ctx);
 					res = new JsonObject();
 					res.addProperty("type", "sv_roomData");
 					res.addProperty("id", roomId);
 					ctx.writeAndFlush(res);
+					sendHistory(roomId, ctx);
+					if (replaced) break;
 					res = new JsonObject();
 					res.addProperty("type", "sv_playerJoined");
 					res.add("player", player);
@@ -1482,6 +1525,7 @@ public class Main {
 					jsonObject.getAsJsonObject("message").add("player", player);
 					jsonObject.getAsJsonObject("message").add("textboxes", textboxesOut);
 					sendToOthers(tcCmd ? null : player, jsonObject, USERS);
+					if (!tcCmd && !roomId.equals("room_e")) addToHistory(roomId, jsonObject);
 					channel = getDiscordChannelForRoomId(roomId);
 					if (channel != null) {
 						TextChannel textChannel = jda.getTextChannelById(channel);

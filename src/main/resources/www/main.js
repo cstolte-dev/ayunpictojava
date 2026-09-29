@@ -787,6 +787,7 @@ loaderFunc = (loader, resources) => {
                     break;
                 }
                 case "EXIT": {
+                    try { localStorage.removeItem("pc_room"); } catch (e) {}
                     let obj = {type: "cl_leaveRoom"};
                     websocket.send(JSON.stringify(obj));
                     leaveRoom();
@@ -1409,6 +1410,7 @@ loaderFunc = (loader, resources) => {
 
             //heartbeat();
             websocket.send("handshake");
+            if (typeof pcAutoRejoin === "function") pcAutoRejoin();
         };
 
         websocket.onmessage = function (event) {
@@ -1428,7 +1430,16 @@ loaderFunc = (loader, resources) => {
                     }
                     case "sv_roomData": {
                         roomData = obj;
+                        try {
+                            if (!roomData.private) localStorage.setItem("pc_room", roomData.id);
+                            sessionStorage.removeItem("pc_tries");
+                        } catch (e) {}
                         joinRoom();
+                        break;
+                    }
+                    case "sv_replaced": {
+                        // This tab was replaced by a newer connection with the same name
+                        window.__pcReplaced = true;
                         break;
                     }
                     case "sv_error": {
@@ -1506,7 +1517,7 @@ loaderFunc = (loader, resources) => {
                                 scrollPos = oldScrollPos;
                                 scrollTo(scrollPos, -1);
                             }
-                            sounds.receive.play();
+                            if (!obj.history) sounds.receive.play();
                         }
                         break;
                     }
@@ -1573,6 +1584,7 @@ loaderFunc = (loader, resources) => {
     }
 
     function connectionClosed() {
+        if (typeof pcScheduleRejoin === "function") pcScheduleRejoin();
         pc_sprites.connection.texture = resources["connection_bad"].texture;
         for (let i = 0; i < app.stage.children.length; i++) {
             app.stage.children[i].interactive = false;

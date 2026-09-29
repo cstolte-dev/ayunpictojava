@@ -210,6 +210,20 @@
         html.dark body, html.dark iframe[title*="hCaptcha"], html.dark #captcha, html.dark .pcr-app, html.dark .pcr-button {
             filter: invert(100%);
         }
+        /* Center the game on screens taller/wider than the DS layout (e.g. phones) */
+        html, body {
+            height: 100%;
+        }
+        body {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            min-height: 100dvh;
+        }
+        #root {
+            flex: none;
+        }
     </style>
 
 </head>
@@ -333,6 +347,49 @@
 
     let authed = false;
 
+    // ---- Auto-rejoin after a disconnect (e.g. phone locked / app switched) ----
+    function pcSavedRoom() {
+        try { return localStorage.getItem("pc_room"); } catch (e) { return null; }
+    }
+
+    function pcAutoRejoin() {
+        const room = pcSavedRoom();
+        if (!room || authed || (window.location.hash && window.location.hash.length === 7)) return;
+        const name = (localStorage.getItem("username") || "").replace(/[^\w\s]/gi, '');
+        const hex = (localStorage.getItem("color") || "#289acb").replace("#", "");
+        playerData.name = name;
+        playerData.color = parseInt(hex, 16);
+        window.__pcAutoJoinRoom = room;
+        websocket.send(JSON.stringify({type: 'cl_verifyName', player: playerData, token: token}));
+        authed = true;
+    }
+
+    function pcScheduleRejoin() {
+        if (window.__pcReplaced || !pcSavedRoom()) return;
+        if (document.visibilityState !== "visible") {
+            window.__pcRejoinPending = true;
+            return;
+        }
+        let tries = 0;
+        try { tries = +(sessionStorage.getItem("pc_tries") || 0); sessionStorage.setItem("pc_tries", tries + 1); } catch (e) {}
+        setTimeout(function () { window.location.reload(); }, Math.min(30000, 1500 * Math.pow(2, tries)));
+    }
+
+    let pcHiddenAt = 0;
+    document.addEventListener("visibilitychange", function () {
+        if (document.visibilityState === "hidden") {
+            pcHiddenAt = Date.now();
+            return;
+        }
+        if (window.__pcReplaced || !pcSavedRoom() || !authed) return;
+        const awayMs = pcHiddenAt ? Date.now() - pcHiddenAt : 0;
+        const dead = !websocket || websocket.readyState !== 1;
+        if (dead || window.__pcRejoinPending || awayMs > 15000) window.location.reload();
+    });
+    window.addEventListener("pageshow", function (e) {
+        if (e.persisted && pcSavedRoom() && (!websocket || websocket.readyState !== 1)) window.location.reload();
+    });
+
     function requestVerification() {
         if (!token) return;
         if (authed) return;
@@ -362,7 +419,12 @@
             if (document.getElementById("intro").style.opacity <= 0) {
                 clearInterval(interval);
                 document.getElementById("intro").style.display = "none";
-                if (window.location.hash && window.location.hash.length === 7) {
+                if (window.__pcAutoJoinRoom && !(window.location.hash && window.location.hash.length === 7)) {
+                    const rid = window.__pcAutoJoinRoom;
+                    window.__pcAutoJoinRoom = null;
+                    const btn = pc_sprites.roomButtons && pc_sprites.roomButtons.find(function (b) { return b.roomId === rid; });
+                    if (btn) btn.emit("pointerup");
+                } else if (window.location.hash && window.location.hash.length === 7) {
                     pc_sprites.roomButtons[pc_sprites.roomButtons.length - 1].emit("pointerup");
                     let int = setInterval(function () {
                         if (joinedRoom) {
