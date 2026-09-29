@@ -10,7 +10,6 @@ import io.netty.handler.codec.MessageToMessageEncoder;
 import io.netty.handler.codec.http.*;
 import io.netty.handler.codec.http.websocketx.TextWebSocketFrame;
 import io.netty.handler.codec.http.websocketx.WebSocketServerProtocolHandler;
-import io.netty.handler.codec.http.websocketx.WebSocketFrameAggregator;
 import io.netty.handler.codec.http.websocketx.extensions.compression.WebSocketServerCompressionHandler;
 import io.netty.util.AttributeKey;
 import net.dv8tion.jda.api.EmbedBuilder;
@@ -675,8 +674,7 @@ public class Main {
 									}
 								if (web == null || (request.headers().contains(HttpHeaderNames.CONNECTION) && request.headers().get(HttpHeaderNames.CONNECTION).toLowerCase().contains("upgrade") && request.headers().contains(HttpHeaderNames.UPGRADE) && request.headers().get(HttpHeaderNames.UPGRADE).toLowerCase().contains("websocket"))) {
 									pipeline.addLast("websocket-server-compression-handler", new WebSocketServerCompressionHandler());
-									pipeline.addLast("websocket-server-protocol-handler", new WebSocketServerProtocolHandler("/", null, true, 4194304));
-									pipeline.addLast("websocket-frame-aggregator", new WebSocketFrameAggregator(4194304));
+									pipeline.addLast("websocket-server-protocol-handler", new WebSocketServerProtocolHandler("/", null, true, 65536));
 									pipeline.addLast("websocket-frametojson", new WebSocketFrameToJsonObjectDecoder());
 									pipeline.addLast("websocket-jsontoframe", new JsonObjectToWebSocketFrameEncoder());
 									pipeline.addLast("server-handler", new ServerHandler());
@@ -689,7 +687,7 @@ public class Main {
 										}
 										InetAddress ipp = ((InetSocketAddress) connection.remoteAddress()).getAddress();
 										if (ipp.getHostAddress().equalsIgnoreCase(ip)) i++;
-										if (i >= 50) {
+										if (i >= 5) {
 											ctx.close();
 											return;
 										}
@@ -842,17 +840,16 @@ public class Main {
 
 		@Override
 		protected void decode(ChannelHandlerContext ctx, TextWebSocketFrame frame, List<Object> out) {
-			if (frame.content().readableBytes() > 4194304) {
+			if (frame.content().readableBytes() > 524288) {
 				ctx.close();
 				return;
 			}
-			if (frame.content().readableBytes() > 60000) System.out.println("[debug] Large message received: " + frame.content().readableBytes() + " bytes");
 			if (frame.text().equals("pong")) {
 				if (ctx.channel().hasAttr(PINGED) && ctx.channel().attr(PINGED).get()) {
 					ctx.close();
 				} else {
 					int pr = ctx.channel().hasAttr(PINGS_ROW) ? ctx.channel().attr(PINGS_ROW).get() : 0;
-					if (pr >= 300) {
+					if (pr >= 1200) { // ~10 hours idle (1200 pings x 30s)
 						// idle
 						ctx.close();
 						return;
@@ -879,7 +876,6 @@ public class Main {
 			try {
 				out.add(gson.fromJson(frame.text(), JsonObject.class));
 			} catch (JsonSyntaxException ignored) {
-				System.out.println("[debug] Could not read a message (" + frame.content().readableBytes() + " bytes)");
 			}
 		}
 
@@ -902,33 +898,6 @@ public class Main {
 
 	private static String filterMsg(String in) {
 		return in.replaceAll("([_*~`|\\\\<>:!])", "\\\\$1").replaceAll("@(everyone|here|[!&]?[0-9]{17,21})", "@\u200b\\\\$1");
-	}
-
-	// Recent messages per public room, replayed to people when they join/rejoin
-	private static final int HISTORY_SIZE = 30;
-	private static final Map<String, ArrayDeque<JsonObject>> HISTORY = new ConcurrentHashMap<>();
-
-	private static void addToHistory(String roomId, JsonObject msg) {
-		ArrayDeque<JsonObject> h = HISTORY.computeIfAbsent(roomId, k -> new ArrayDeque<>());
-		synchronized (h) {
-			h.addLast(msg.deepCopy());
-			while (h.size() > HISTORY_SIZE) h.removeFirst();
-		}
-	}
-
-	private static void sendHistory(String roomId, ChannelHandlerContext ctx) {
-		ArrayDeque<JsonObject> h = HISTORY.get(roomId);
-		if (h == null) return;
-		List<JsonObject> copy;
-		synchronized (h) {
-			copy = new ArrayList<>(h);
-		}
-		for (JsonObject msg : copy) {
-			JsonObject m = msg.deepCopy();
-			m.addProperty("history", true);
-			ctx.write(m);
-		}
-		ctx.flush();
 	}
 
 	private static final Map<JsonObject, ChannelHandlerContext> USERS_A = new ConcurrentHashMap<>();
@@ -957,7 +926,6 @@ public class Main {
 	static class ServerHandler extends SimpleChannelInboundHandler<JsonObject> {
 		@Override
 		public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
-			System.out.println("[debug] Connection closed due to error: " + cause);
 			ctx.close();
 		}
 
@@ -1218,31 +1186,15 @@ public class Main {
 					if (USERS == null) return;
 					if (USERS.size() >= 16) return;
 					player = ctx.channel().attr(PLAYER_DATA).get();
-					// Reconnect support: if someone with this name is already in the room on an
-					// older connection (e.g. a phone that went to the background), replace it.
-					boolean replaced = false;
-					for (Map.Entry<JsonObject, ChannelHandlerContext> entry : new ArrayList<>(USERS.entrySet())) {
-						if (!entry.getKey().get("name").getAsString().equals(player.get("name").getAsString())) continue;
-						ChannelHandlerContext oldCtx = entry.getValue();
-						if (oldCtx.channel() == ctx.channel()) return;
-						// Same name but different color = a different person; keep the old behavior (reject)
-						if (!entry.getKey().equals(player)) return;
-						USERS.remove(entry.getKey(), oldCtx);
-						oldCtx.channel().attr(ROOM_ID).set(null);
-						JsonObject kick = new JsonObject();
-						kick.addProperty("type", "sv_replaced");
-						oldCtx.writeAndFlush(kick).addListener(ChannelFutureListener.CLOSE);
-						replaced = true;
-					}
-					if (USERS.size() >= 16) return;
+					if (USERS.containsKey(player)) return;
+					finalPlayer = player;
+					if (USERS.keySet().stream().anyMatch(jsonObject1 -> jsonObject1.get("name").getAsString().equals(finalPlayer.get("name").getAsString()))) return;
 					ctx.channel().attr(ROOM_ID).set(roomId);
 					USERS.put(player, ctx);
 					res = new JsonObject();
 					res.addProperty("type", "sv_roomData");
 					res.addProperty("id", roomId);
 					ctx.writeAndFlush(res);
-					sendHistory(roomId, ctx);
-					if (replaced) break;
 					res = new JsonObject();
 					res.addProperty("type", "sv_playerJoined");
 					res.add("player", player);
@@ -1268,15 +1220,15 @@ public class Main {
 					} else {
 						if (!ctx.channel().hasAttr(COOLDOWN))
 							ctx.channel().attr(COOLDOWN).set(System.currentTimeMillis() - 64000L);
-						if (!ctx.channel().hasAttr(RATELIMIT)) ctx.channel().attr(RATELIMIT).set(300);
+						if (!ctx.channel().hasAttr(RATELIMIT)) ctx.channel().attr(RATELIMIT).set(1000);
 						if (ctx.channel().attr(COOLDOWN).get() > System.currentTimeMillis()) {
 							ctx.writeAndFlush(generateServerMessage(16463656, "Ratelimited: Please wait " + (1 + (int) (ctx.channel().attr(COOLDOWN).get() - System.currentTimeMillis()) / 1000) + "s"));
 							return;
 						} else {
-							if (System.currentTimeMillis() - ctx.channel().attr(COOLDOWN).get() < 300) {
-								ctx.channel().attr(RATELIMIT).set(Math.min(4000, ctx.channel().attr(RATELIMIT).get() * 2));
+							if (System.currentTimeMillis() - ctx.channel().attr(COOLDOWN).get() < 1000) {
+								ctx.channel().attr(RATELIMIT).set(Math.min(32000, ctx.channel().attr(RATELIMIT).get() * 2));
 							} else {
-								ctx.channel().attr(RATELIMIT).set(300);
+								ctx.channel().attr(RATELIMIT).set(1000);
 							}
 							ctx.channel().attr(COOLDOWN).set(System.currentTimeMillis() + ctx.channel().attr(RATELIMIT).get());
 						}
@@ -1459,7 +1411,7 @@ public class Main {
 						filter = Arrays.asList(chatFilterRooms).contains(roomId);
 					}
 					String evilText = textRaw;
-					BufferedImage drawingImage = tess != null ? drawImage(ctx, jsonObject, player, textboxesOut) : null;
+					BufferedImage drawingImage = drawImage(ctx, jsonObject, player, textboxesOut);
 					if (drawingImage != null && tess != null) {
 						try {
 							evilText = tess.doOCR(drawingImage);
@@ -1525,7 +1477,6 @@ public class Main {
 					jsonObject.getAsJsonObject("message").add("player", player);
 					jsonObject.getAsJsonObject("message").add("textboxes", textboxesOut);
 					sendToOthers(tcCmd ? null : player, jsonObject, USERS);
-					if (!tcCmd && !roomId.equals("room_e")) addToHistory(roomId, jsonObject);
 					channel = getDiscordChannelForRoomId(roomId);
 					if (channel != null) {
 						TextChannel textChannel = jda.getTextChannelById(channel);
@@ -1876,7 +1827,7 @@ public class Main {
 			InetAddress ip = ((InetSocketAddress) ctx.channel().remoteAddress()).getAddress();
 			super.channelActive(ctx);
 			CONS_PER_IP.putIfAbsent(ip, new AtomicInteger(0));
-			if (CONS_PER_IP.get(ip).getAndIncrement() > 50) {
+			if (CONS_PER_IP.get(ip).getAndIncrement() > 5) {
 				ctx.close();
 			}
 		}
