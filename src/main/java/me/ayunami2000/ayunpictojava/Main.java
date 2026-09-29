@@ -674,7 +674,7 @@ public class Main {
 									}
 								if (web == null || (request.headers().contains(HttpHeaderNames.CONNECTION) && request.headers().get(HttpHeaderNames.CONNECTION).toLowerCase().contains("upgrade") && request.headers().contains(HttpHeaderNames.UPGRADE) && request.headers().get(HttpHeaderNames.UPGRADE).toLowerCase().contains("websocket"))) {
 									pipeline.addLast("websocket-server-compression-handler", new WebSocketServerCompressionHandler());
-									pipeline.addLast("websocket-server-protocol-handler", new WebSocketServerProtocolHandler("/", null, true, 65536));
+									pipeline.addLast("websocket-server-protocol-handler", new WebSocketServerProtocolHandler("/", null, true, 524288));
 									pipeline.addLast("websocket-frametojson", new WebSocketFrameToJsonObjectDecoder());
 									pipeline.addLast("websocket-jsontoframe", new JsonObjectToWebSocketFrameEncoder());
 									pipeline.addLast("server-handler", new ServerHandler());
@@ -1411,7 +1411,7 @@ public class Main {
 						filter = Arrays.asList(chatFilterRooms).contains(roomId);
 					}
 					String evilText = textRaw;
-					BufferedImage drawingImage = drawImage(ctx, jsonObject, player, textboxesOut);
+					BufferedImage drawingImage = tess != null ? drawImage(ctx, jsonObject, player, textboxesOut) : null;
 					if (drawingImage != null && tess != null) {
 						try {
 							evilText = tess.doOCR(drawingImage);
