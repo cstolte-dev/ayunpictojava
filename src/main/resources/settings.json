@@ -14,7 +14,9 @@
 			"1554520560229285888"
 		],
 		"status_channel": "",
-		"image_quality": 4.0
+		"image_quality": 6.0,
+		"image_scale": 6,
+		"image_detail": 2
 	},
 	"chat_filter": {
 		"enabled": false,
