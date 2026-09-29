@@ -72,6 +72,8 @@ public class Main {
 	private static float scale = 4.0F;
 	// How many times bigger the Discord image is than the real DS box (pixel-perfect upscale)
 	private static int outputScale = 3;
+	// Pixel detail before upscaling: 1 = exact DS pixels, 2 = twice as fine (smoother curves, same thickness)
+	private static int outputDetail = 1;
 	
 	private static final Set<Channel> connections = new HashSet<>();
 
@@ -336,6 +338,7 @@ public class Main {
 					}
 					if (discordJson.has("image_quality")) scale = discordJson.get("image_quality").getAsFloat();
 					if (discordJson.has("image_scale")) outputScale = Math.max(1, discordJson.get("image_scale").getAsInt());
+					if (discordJson.has("image_detail")) outputDetail = Math.max(1, discordJson.get("image_detail").getAsInt());
 					try {
 						jda = JDABuilder.createDefault(token).setActivity(Activity.playing("PictoChat Online")).enableIntents(GatewayIntent.GUILD_MESSAGES, GatewayIntent.MESSAGE_CONTENT).addEventListeners(new ListenerAdapter() {
 							@Override
@@ -1831,16 +1834,18 @@ public class Main {
 				g2d.dispose();
 				// Shrink back to real DS resolution so strokes and text get the same chunky
 				// pixel look as the browser...
-				BufferedImage drawingImage2 = new BufferedImage((int) (drawingImage.getWidth() / scale), (int) (drawingImage.getHeight() / scale), drawingImage.getType());
+				int detail = Math.min(outputDetail, outputScale);
+				int baseW = (int) (drawingImage.getWidth() / scale), baseH = (int) (drawingImage.getHeight() / scale);
+				BufferedImage drawingImage2 = new BufferedImage(baseW * detail, baseH * detail, drawingImage.getType());
 				g2d = drawingImage2.createGraphics();
 				g2d.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
 				g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_OFF);
 				g2d.drawImage(drawingImage, 0, 0, drawingImage2.getWidth(), drawingImage2.getHeight(), null);
 				g2d.dispose();
-				if (outputScale <= 1) return drawingImage2;
+				if (outputScale <= detail) return drawingImage2;
 				// ...then blow it up with hard pixel edges (no smoothing) so it's big enough
 				// to read on Discord, like the browser zooms the DS screen.
-				BufferedImage upscaled = new BufferedImage(drawingImage2.getWidth() * outputScale, drawingImage2.getHeight() * outputScale, drawingImage2.getType());
+				BufferedImage upscaled = new BufferedImage(baseW * outputScale, baseH * outputScale, drawingImage2.getType());
 				g2d = upscaled.createGraphics();
 				g2d.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
 				g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_OFF);
