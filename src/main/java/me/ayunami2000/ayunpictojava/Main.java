@@ -674,7 +674,7 @@ public class Main {
 									}
 								if (web == null || (request.headers().contains(HttpHeaderNames.CONNECTION) && request.headers().get(HttpHeaderNames.CONNECTION).toLowerCase().contains("upgrade") && request.headers().contains(HttpHeaderNames.UPGRADE) && request.headers().get(HttpHeaderNames.UPGRADE).toLowerCase().contains("websocket"))) {
 									pipeline.addLast("websocket-server-compression-handler", new WebSocketServerCompressionHandler());
-									pipeline.addLast("websocket-server-protocol-handler", new WebSocketServerProtocolHandler("/", null, true, 524288));
+									pipeline.addLast("websocket-server-protocol-handler", new WebSocketServerProtocolHandler("/", null, true, 4194304));
 									pipeline.addLast("websocket-frametojson", new WebSocketFrameToJsonObjectDecoder());
 									pipeline.addLast("websocket-jsontoframe", new JsonObjectToWebSocketFrameEncoder());
 									pipeline.addLast("server-handler", new ServerHandler());
@@ -840,10 +840,11 @@ public class Main {
 
 		@Override
 		protected void decode(ChannelHandlerContext ctx, TextWebSocketFrame frame, List<Object> out) {
-			if (frame.content().readableBytes() > 524288) {
+			if (frame.content().readableBytes() > 4194304) {
 				ctx.close();
 				return;
 			}
+			if (frame.content().readableBytes() > 60000) System.out.println("[debug] Large message received: " + frame.content().readableBytes() + " bytes");
 			if (frame.text().equals("pong")) {
 				if (ctx.channel().hasAttr(PINGED) && ctx.channel().attr(PINGED).get()) {
 					ctx.close();
@@ -926,6 +927,7 @@ public class Main {
 	static class ServerHandler extends SimpleChannelInboundHandler<JsonObject> {
 		@Override
 		public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
+			System.out.println("[debug] Connection closed due to error: " + cause);
 			ctx.close();
 		}
 
