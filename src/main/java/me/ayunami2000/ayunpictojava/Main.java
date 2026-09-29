@@ -10,6 +10,7 @@ import io.netty.handler.codec.MessageToMessageEncoder;
 import io.netty.handler.codec.http.*;
 import io.netty.handler.codec.http.websocketx.TextWebSocketFrame;
 import io.netty.handler.codec.http.websocketx.WebSocketServerProtocolHandler;
+import io.netty.handler.codec.http.websocketx.WebSocketFrameAggregator;
 import io.netty.handler.codec.http.websocketx.extensions.compression.WebSocketServerCompressionHandler;
 import io.netty.util.AttributeKey;
 import net.dv8tion.jda.api.EmbedBuilder;
@@ -675,6 +676,7 @@ public class Main {
 								if (web == null || (request.headers().contains(HttpHeaderNames.CONNECTION) && request.headers().get(HttpHeaderNames.CONNECTION).toLowerCase().contains("upgrade") && request.headers().contains(HttpHeaderNames.UPGRADE) && request.headers().get(HttpHeaderNames.UPGRADE).toLowerCase().contains("websocket"))) {
 									pipeline.addLast("websocket-server-compression-handler", new WebSocketServerCompressionHandler());
 									pipeline.addLast("websocket-server-protocol-handler", new WebSocketServerProtocolHandler("/", null, true, 4194304));
+									pipeline.addLast("websocket-frame-aggregator", new WebSocketFrameAggregator(4194304));
 									pipeline.addLast("websocket-frametojson", new WebSocketFrameToJsonObjectDecoder());
 									pipeline.addLast("websocket-jsontoframe", new JsonObjectToWebSocketFrameEncoder());
 									pipeline.addLast("server-handler", new ServerHandler());
@@ -877,6 +879,7 @@ public class Main {
 			try {
 				out.add(gson.fromJson(frame.text(), JsonObject.class));
 			} catch (JsonSyntaxException ignored) {
+				System.out.println("[debug] Could not read a message (" + frame.content().readableBytes() + " bytes)");
 			}
 		}
 
