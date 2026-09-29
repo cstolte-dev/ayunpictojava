@@ -1,19 +1,19 @@
 {
 	"port": 8080,
 	"host": "127.0.0.1",
-	"tripcode_secret": "pictojava",
+	"tripcode_secret": "CHANGE_ME_TO_SOMETHING_RANDOM",
 	"web": "www",
 	"secret": "",
 	"discord": {
-		"enabled": false,
-		"token": "",
+		"enabled": true,
+		"token": "PASTE_YOUR_BOT_TOKEN_HERE",
 		"channels": [
-			"",
-			"",
-			"",
-			""
+			"ROOM_A_CHANNEL_ID",
+			"ROOM_B_CHANNEL_ID",
+			"ROOM_C_CHANNEL_ID",
+			"ROOM_D_CHANNEL_ID"
 		],
-		"status_channel": "",
+		"status_channel": "STATUS_CHANNEL_ID",
 		"image_quality": 4.0
 	},
 	"chat_filter": {
