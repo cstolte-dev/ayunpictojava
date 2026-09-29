@@ -1,17 +1,17 @@
 {
 	"port": 8080,
 	"host": "127.0.0.1",
-	"tripcode_secret": "CHANGE_ME_TO_SOMETHING_RANDOM",
+	"tripcode_secret": "pictojava",
 	"web": "www",
 	"secret": "",
-	"discord": {1554512259122733056}
-		"enabled": true,
-		"token": "MTU1NDUxMzQyMDU4NDM2MTk5NA.Grk_IW.Zm-P-qiWmpAnolyQoMOb7e6sk56x3LAuP13oTY",
+	"discord": {
+		"enabled": false,
+		"token": "",
 		"channels": [
-			"1554520470223851651",
-			"1554520506097606656",
-			"1554520535088631848",
-			"1554520560229285888"
+			"",
+			"",
+			"",
+			""
 		],
 		"status_channel": "",
 		"image_quality": 4.0

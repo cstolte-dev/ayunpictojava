@@ -21,3 +21,6 @@ gradle-app.setting
 .classpath
 
 run/settings.json
+run/
+/settings.json
+.DS_Store
