@@ -1,6 +1,6 @@
 <html lang="en">
 <head>
-    <title>Connor PictoChat.</title>
+    <title>PictoChat Online, by ayunami2000.</title>
     <meta name="viewport" content="width=device-width, user-scalable=no, initial-scale=1, maximum-scale=1, minimal-ui"/>
     <meta name="apple-mobile-web-app-capable" content="yes"/>
     <meta name="mobile-web-app-capable" content="yes"/>
@@ -12,19 +12,19 @@
     <meta name="msapplication-TileColor" content="#fff"/>
     <meta name="theme-color" content="#fff"/>
     <link rel="icon" type="image/png" href="icon.png"/>
-    <meta name="title" content="Connor PictoChat."/>
+    <meta name="title" content="PictoChat Online, by ayunami2000."/>
     <meta name="description" content="PictoChat web app with a server written in Java! Source: https://github.com/ayunami2000/ayunpictojava"/>
     <meta property="og:type" content="website"/>
     <meta property="og:url" content="https://pict.chat"/>
-    <meta property="og:title" content="Connor PictoChat."/>
+    <meta property="og:title" content="PictoChat Online, by ayunami2000."/>
     <meta property="og:description" content="PictoChat web app with a server written in Java! Source: https://github.com/ayunami2000/ayunpictojava"/>
     <meta property="og:image" content="welcome.png"/>
     <meta property="twitter:card" content="summary_large_image"/>
     <meta property="twitter:url" content="https://pict.chat"/>
-    <meta property="twitter:title" content="Connor PictoChat."/>
+    <meta property="twitter:title" content="PictoChat Online, by ayunami2000."/>
     <meta property="twitter:description" content="PictoChat web app with a server written in Java! Source: https://github.com/ayunami2000/ayunpictojava"/>
     <meta name="twitter:image" content="welcome.png"/>
-    <script src="https://js.hcaptcha.com/1/api.js" async defer></script>
+    <!-- captcha script removed -->
     <script src="fontfaceobserver.js"></script>
     <script src="howler.min.js"></script>
     <script src="pixi.min.js"></script>
@@ -207,36 +207,40 @@
             margin-right: auto;
         }
 
+
+        #logout-btn {
+            display: none;
+            position: fixed;
+            top: 8px;
+            right: 8px;
+            z-index: 20;
+            font-family: nds, sans-serif;
+            font-size: 12px;
+            padding: 4px 10px;
+            background: #fff;
+            color: #000;
+            border: 1px solid #000;
+            cursor: pointer;
+        }
+
+        #logout-btn:hover {
+            background: #e0e0e0;
+        }
+
         html.dark body, html.dark iframe[title*="hCaptcha"], html.dark #captcha, html.dark .pcr-app, html.dark .pcr-button {
             filter: invert(100%);
-        }
-        /* Center the game on screens taller/wider than the DS layout (e.g. phones) */
-        html, body {
-            height: 100%;
-        }
-        body {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            min-height: 100vh;
-            min-height: 100dvh;
-        }
-        #root {
-            flex: none;
         }
     </style>
 
 </head>
 <body>
 
+<button id="logout-btn" onclick="logout()" title="Leave and change your name or colour">Log out</button>
 <div id="root">
     <div id="intro">
         <img src="images/intro_bg.png" id="intro_bg"/>
         <div id="main-settings">
-            <div id="captcha" style="transform: scale(calc(91 / 300)); height: 65px;"
-                 class="h-captcha" data-theme="light" data-retry="never"
-                 data-sitekey="49043ad8-6b2d-4f6c-bfa5-a8c9f235e048" data-callback="setVerificationToken"
-                 data-error-callback="setVerificationToken"></div>
+            <div id="captcha"></div> <!-- captcha disabled; empty placeholder kept so main.js layout code still works -->
             <img src="images/logo_dc.png" id="logo" onclick="sounds.error.play()" title="Connecting... Please wait!" alt="Connect to PictoChat"/>
             <div class="intro-text">Username:</div>
             <input type="text" id="name_box" spellcheck="false" maxlength="10" onkeyup="fixUserbox(this)"/>
@@ -347,49 +351,6 @@
 
     let authed = false;
 
-    // ---- Auto-rejoin after a disconnect (e.g. phone locked / app switched) ----
-    function pcSavedRoom() {
-        try { return localStorage.getItem("pc_room"); } catch (e) { return null; }
-    }
-
-    function pcAutoRejoin() {
-        const room = pcSavedRoom();
-        if (!room || authed || (window.location.hash && window.location.hash.length === 7)) return;
-        const name = (localStorage.getItem("username") || "").replace(/[^\w\s]/gi, '');
-        const hex = (localStorage.getItem("color") || "#289acb").replace("#", "");
-        playerData.name = name;
-        playerData.color = parseInt(hex, 16);
-        window.__pcAutoJoinRoom = room;
-        websocket.send(JSON.stringify({type: 'cl_verifyName', player: playerData, token: token}));
-        authed = true;
-    }
-
-    function pcScheduleRejoin() {
-        if (window.__pcReplaced || !pcSavedRoom()) return;
-        if (document.visibilityState !== "visible") {
-            window.__pcRejoinPending = true;
-            return;
-        }
-        let tries = 0;
-        try { tries = +(sessionStorage.getItem("pc_tries") || 0); sessionStorage.setItem("pc_tries", tries + 1); } catch (e) {}
-        setTimeout(function () { window.location.reload(); }, Math.min(30000, 1500 * Math.pow(2, tries)));
-    }
-
-    let pcHiddenAt = 0;
-    document.addEventListener("visibilitychange", function () {
-        if (document.visibilityState === "hidden") {
-            pcHiddenAt = Date.now();
-            return;
-        }
-        if (window.__pcReplaced || !pcSavedRoom() || !authed) return;
-        const awayMs = pcHiddenAt ? Date.now() - pcHiddenAt : 0;
-        const dead = !websocket || websocket.readyState !== 1;
-        if (dead || window.__pcRejoinPending || awayMs > 15000) window.location.reload();
-    });
-    window.addEventListener("pageshow", function (e) {
-        if (e.persisted && pcSavedRoom() && (!websocket || websocket.readyState !== 1)) window.location.reload();
-    });
-
     function requestVerification() {
         if (!token) return;
         if (authed) return;
@@ -408,6 +369,7 @@
         document.getElementById("intro").style.opacity = 1.5;
         const cap = document.getElementById("captcha");
         if (cap) cap.style.display = "none";
+        document.getElementById("logout-btn").style.display = "block";
         let margin = 50 * SCALE;
         let marginBottom = 15;
         const interval = setInterval(function () {
@@ -419,12 +381,7 @@
             if (document.getElementById("intro").style.opacity <= 0) {
                 clearInterval(interval);
                 document.getElementById("intro").style.display = "none";
-                if (window.__pcAutoJoinRoom && !(window.location.hash && window.location.hash.length === 7)) {
-                    const rid = window.__pcAutoJoinRoom;
-                    window.__pcAutoJoinRoom = null;
-                    const btn = pc_sprites.roomButtons && pc_sprites.roomButtons.find(function (b) { return b.roomId === rid; });
-                    if (btn) btn.emit("pointerup");
-                } else if (window.location.hash && window.location.hash.length === 7) {
+                if (window.location.hash && window.location.hash.length === 7) {
                     pc_sprites.roomButtons[pc_sprites.roomButtons.length - 1].emit("pointerup");
                     let int = setInterval(function () {
                         if (joinedRoom) {
@@ -435,6 +392,13 @@
                 }
             }
         }, 1000 / 60);
+    }
+
+    function logout() {
+        if (!confirm("Log out? You'll go back to the start screen where you can change your name and colour.")) return;
+        // Reloading closes the websocket (the server removes you from the room) and
+        // shows the start screen again, pre-filled with your saved name and colour.
+        window.location.reload();
     }
 
     function otherSettings() {
