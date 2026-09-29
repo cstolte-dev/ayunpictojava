@@ -1826,13 +1826,9 @@ public class Main {
 					}
 				}
 				g2d.dispose();
-				BufferedImage drawingImage2 = new BufferedImage((int) (drawingImage.getWidth() / scale), (int) (drawingImage.getHeight() / scale), drawingImage.getType());
-				g2d = drawingImage2.createGraphics();
-				g2d.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
-				g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_OFF);
-				g2d.drawImage(drawingImage, 0, 0, drawingImage2.getWidth(), drawingImage2.getHeight(), null);
-				g2d.dispose();
-				return drawingImage2;
+				// Keep the image at the full "image_quality" size instead of shrinking it
+				// back down to DS resolution, so Discord gets a sharper, larger picture.
+				return drawingImage;
 			}
 			return null;
 		}
