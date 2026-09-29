@@ -687,7 +687,7 @@ public class Main {
 										}
 										InetAddress ipp = ((InetSocketAddress) connection.remoteAddress()).getAddress();
 										if (ipp.getHostAddress().equalsIgnoreCase(ip)) i++;
-										if (i >= 5) {
+										if (i >= 50) {
 											ctx.close();
 											return;
 										}
@@ -1220,15 +1220,15 @@ public class Main {
 					} else {
 						if (!ctx.channel().hasAttr(COOLDOWN))
 							ctx.channel().attr(COOLDOWN).set(System.currentTimeMillis() - 64000L);
-						if (!ctx.channel().hasAttr(RATELIMIT)) ctx.channel().attr(RATELIMIT).set(1000);
+						if (!ctx.channel().hasAttr(RATELIMIT)) ctx.channel().attr(RATELIMIT).set(300);
 						if (ctx.channel().attr(COOLDOWN).get() > System.currentTimeMillis()) {
 							ctx.writeAndFlush(generateServerMessage(16463656, "Ratelimited: Please wait " + (1 + (int) (ctx.channel().attr(COOLDOWN).get() - System.currentTimeMillis()) / 1000) + "s"));
 							return;
 						} else {
-							if (System.currentTimeMillis() - ctx.channel().attr(COOLDOWN).get() < 1000) {
-								ctx.channel().attr(RATELIMIT).set(Math.min(32000, ctx.channel().attr(RATELIMIT).get() * 2));
+							if (System.currentTimeMillis() - ctx.channel().attr(COOLDOWN).get() < 300) {
+								ctx.channel().attr(RATELIMIT).set(Math.min(4000, ctx.channel().attr(RATELIMIT).get() * 2));
 							} else {
-								ctx.channel().attr(RATELIMIT).set(1000);
+								ctx.channel().attr(RATELIMIT).set(300);
 							}
 							ctx.channel().attr(COOLDOWN).set(System.currentTimeMillis() + ctx.channel().attr(RATELIMIT).get());
 						}
@@ -1827,7 +1827,7 @@ public class Main {
 			InetAddress ip = ((InetSocketAddress) ctx.channel().remoteAddress()).getAddress();
 			super.channelActive(ctx);
 			CONS_PER_IP.putIfAbsent(ip, new AtomicInteger(0));
-			if (CONS_PER_IP.get(ip).getAndIncrement() > 5) {
+			if (CONS_PER_IP.get(ip).getAndIncrement() > 50) {
 				ctx.close();
 			}
 		}
