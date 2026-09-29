@@ -1,17 +1,17 @@
 {
 	"port": 8080,
 	"host": "127.0.0.1",
-	"tripcode_secret": "pictojava",
+	"tripcode_secret": "CHANGE_ME_TO_SOMETHING_RANDOM",
 	"web": "www",
 	"secret": "",
 	"discord": {
-		"enabled": false,
+		"enabled": true,
 		"token": "",
 		"channels": [
-			"",
-			"",
-			"",
-			""
+			"1554520470223851651",
+			"1554520506097606656",
+			"1554520535088631848",
+			"1554520560229285888"
 		],
 		"status_channel": "",
 		"image_quality": 4.0
