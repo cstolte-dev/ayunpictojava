@@ -16,7 +16,7 @@
 		"status_channel": "",
 		"image_quality": 6.0,
 		"image_scale": 6,
-		"image_detail": 2
+		"image_detail": 1
 	},
 	"chat_filter": {
 		"enabled": false,
